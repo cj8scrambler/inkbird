@@ -1,0 +1,19 @@
+[Unit]
+Description=Inkbird to Adafruit data streamer
+After=network.target bluetooth.target
+
+[Service]
+Type=simple
+Group=bluetooth
+Environment=INKBIRD_MQTT_HOST="io.adafruit.com"
+Environment=INKBIRD_MQTT_PORT="1883"
+Environment=INKBIRD_ADDRESS=[MAC Address of Inkbird]
+Environment=INKBIRD_MQTT_USERNAME=[io.adafruit.com username]
+Environment=INKBIRD_MQTT_PASSWORD=[io.adafruit.com key]
+Environment=INKBIRD_TEMP_UNITS="F"
+Environment=INKBIRD_MQTT_PERIOD=30
+ExecStart=python3 [path to inkbird/main.py]
+Restart=on-abort
+
+[Install]
+WantedBy=multi-user.target

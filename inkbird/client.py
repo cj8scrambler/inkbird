@@ -1,51 +1,35 @@
 import os
-import asyncio
 import array
-from collections import deque
 import struct
 import logging
 import threading
-
-
-from .hass import Probe, Battery
 
 from bluepy import btle
 
 from . import const
 from collections import defaultdict
 
-logger = logging.getLogger("inkbird")
-
+logger = logging.getLogger("inkbird-client")
+logger.setLevel(logging.WARN)
 
 class Timer(threading.Timer):
     def run(self):
         while not self.finished.is_set():
             self.finished.wait(self.interval)
             self.function(*self.args, **self.kwargs)
-
         self.finished.set()
-
-
-class key_dependent_dict(defaultdict):
-    def __init__(self, f_of_x):
-        super().__init__(None)  # base class doesn't get a factory
-        self.f_of_x = f_of_x  # save f(x)
-
-    def __missing__(self, key):  # called when a default needed
-        ret = self.f_of_x(key)  # calculate default value
-        self[key] = ret  # and install it in the dict
-        return ret
-
 
 class Delegate(btle.DefaultDelegate):
     def __init__(self, address):
         super().__init__()
         self.address = address
-        self.probes = key_dependent_dict(lambda x: Probe(self.address, x, self.battery.value))
-        self._battery = None
+        self.probes_update = False
+        self.probes = []
+        self.battery_update = False
+        self.battery = None
 
     def handleNotification(self, cHandle, data):
-        logger.debug(f"New Data: {(cHandle, data)}")
+        logger.debug("Received notification: {}".format(cHandle))
         if cHandle == 48:
             self.handleTemperature(data)
         if cHandle == 37:
@@ -54,8 +38,12 @@ class Delegate(btle.DefaultDelegate):
     def handleTemperature(self, data):
         temp = array.array("H")
         temp.fromstring(data)
-        for probe, t in enumerate(temp):
-            self.probes[probe + 1].temperature = t
+        if len(temp) > len(self.probes):
+            self.probes = [None] * len(temp)
+        for p, t in enumerate(temp):
+            self.probes[p] = t
+        self.probes_update = True
+        logger.info("Temp updates: {}".format(self.probes))
 
     def __batteryPercentage(self, current, max):
         factor = max / 6550.0
@@ -73,34 +61,29 @@ class Delegate(btle.DefaultDelegate):
         if data[0] != 36:
             return
         battery, maxBattery = struct.unpack("<HH", data[1:5])
-        battery = self.__batteryPercentage(battery, maxBattery)
-        for probe, sensor in self.probes.items():
-            sensor.battery = battery
-        self.battery.value = battery
-
-    @property
-    def battery(self):
-        if self._battery is None:
-            self._battery = Battery(self.address)
-        return self._battery
-
+        self.battery = self.__batteryPercentage(battery, maxBattery)
+        self.battery_update = True
+        logger.info("Battery update: {}".format(self.battery))
 
 class InkBirdClient:
     def __init__(self, address):
         self.address = address
         self.units = os.environ.get("INKBIRD_TEMP_UNITS", "f").lower()
+        self.delegate = None
 
     def connect(self):
         self.client = btle.Peripheral(self.address)
         self.service = self.client.getServiceByUUID("FFF0")
         self.characteristics = self.service.getCharacteristics()
-        self.client.setDelegate(Delegate(self.address))
+        self.delegate = Delegate(self.address)
+        self.client.setDelegate(self.delegate)
         self.client.writeCharacteristic(
             self.characteristics[0].getHandle() + 1, b"\x01\x00", withResponse=True
         )
         self.client.writeCharacteristic(
             self.characteristics[3].getHandle() + 1, b"\x01\x00", withResponse=True
         )
+        logger.info("Connect success")
 
     def login(self):
         self.characteristics[1].write(const.CREDENTIALS_MESSAGE, withResponse=True)
@@ -132,7 +115,27 @@ class InkBirdClient:
     def set_deg_c(self):
         self.characteristics[4].write(const.UNITS_C_MESSAGE, withResponse=True)
 
+    def is_deg_f(self):
+        if self.units == "f":
+            return True
+        return False
+
     def read_temperature(self):
         return self.service.peripheral.readCharacteristic(
             self.characteristics[3].handle
         )
+
+    def get_last_probes(self):
+        if self.delegate:
+            logger.debug("  get_last_probes() have delegate")
+        if self.delegate and self.delegate.probes_update:
+            logger.debug("  get_last_probes() have probes_update")
+            self.delegate.probes_update = False
+            return self.delegate.probes
+        return []
+
+    def get_last_battery(self):
+        if self.delegate and self.delegate.battery_update:
+            self.delegate.battery_update = False
+            return self.delegate.battery
+        return None

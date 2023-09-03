@@ -14,10 +14,12 @@ wget https://raw.githubusercontent.com/jshridha/inkbird/master/docker-compose.ya
 You will need to modify the environmental variables
 | Variable | Required (Y/N) | Description |
 |----------|----------------|-------------|
-| `INKBIRD_MQTT_HOST` | Y | MQTT server that home assistant uses
-| `INKBIRD_ADDRESS` | Y | The bluetooth address for the inkbird
+| `INKBIRD_MQTT_HOST` | Y | MQTT server
+| `INKBIRD_MQTT_PORT` | Y | MQTT port
+| `INKBIRD_MQTT_PATH` | N | Path to feeds;  will append: disconnect, t1, t2, t3....
 | `INKBIRD_MQTT_USERNAME` | N | MQTT username
 | `INKBIRD_MQTT_PASSWORD` | N | MQTT password
+| `INKBIRD_ADDRESS` | Y | The bluetooth address for the inkbird
 | `INKBIRD_TEMP_UNITS` | N | Set to `F` for farenheit and `C` for celsius (defaults to `F`)
 
 Then just run `docker-compose up -d`
