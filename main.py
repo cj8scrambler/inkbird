@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 
 
-MAX_BACKOFF = 60
+MAX_BACKOFF = 4
 INITIAL_BACKOFF = 1
 
 address = os.environ.get("INKBIRD_ADDRESS")
@@ -68,10 +68,10 @@ if __name__ == "__main__":
                 except bluepy.btle.BTLEInternalError:
                     pass
         except bluepy.btle.BTLEDisconnectError:
-            logger.info("  Unable to connect; Wait {}".format(min(backoff,MAX_BACKOFF)))
+            wait = min(backoff, MAX_BACKOFF)
             mqtt.publish(f"connect", 0)
-            wait = backoff
-            while ('restart' not in mqtt.userdata) and wait:
+            logger.info("Unable to connect; Wait {}".format(wait))
+            while ('restart' not in mqtt.userdata) and (wait > 0):
                 time.sleep(1)
                 wait -= 1
 
